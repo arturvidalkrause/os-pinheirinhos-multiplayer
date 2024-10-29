@@ -1,3 +1,5 @@
+const express = require('express');
+const http = require('http');
 const WebSocket = require('ws');
 
 class Player {
@@ -45,13 +47,12 @@ class Room {
 }
 
 class Server {
-	constructor(port) {
-		this.port = port;
+	constructor(wss) {
 		this.rooms = {}; // Salas de jogo
-		this.wss = new WebSocket.Server({ port: this.port });
+		this.wss = wss;
 
 		this.wss.on('connection', this.onConnection.bind(this));
-		console.log(`Servidor rodando na porta ${this.port}`);
+		console.log(`Servidor WebSocket rodando`);
 	}
 
 	onConnection(ws) {
@@ -120,6 +121,16 @@ class Server {
 	}
 }
 
-// Inicia o servidor
-const port = process.env.PORT || 3001;  // Usa a variável PORT do Glitch
-const server = new Server(port);
+// Configuração do Express e do Servidor HTTP
+const app = express();
+const server = http.createServer(app);
+const wss = new WebSocket.Server({ server });
+
+// Inicializa o servidor WebSocket
+new Server(wss);
+
+// Inicia o servidor HTTP na porta definida
+const port = process.env.PORT || 3000;
+server.listen(port, () => {
+	console.log(`Servidor rodando na porta ${port}`);
+});
