@@ -1,2 +1,2 @@
 [build]
-project = "./server"
+provider = "docker"
