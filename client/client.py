@@ -5,7 +5,7 @@ import _thread
 import random
 
 # Configurações do cliente WebSocket
-server_url = "ws://localhost:3001"
+server_url = "wss://os-pinheirinhos-multiplayer.up.railway.app"
 room_id = input("Digite o nome da sala para entrar ou criar: ")
 
 # Configurações do pygame
