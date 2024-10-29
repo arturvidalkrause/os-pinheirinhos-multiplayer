@@ -5,12 +5,6 @@
 - **client/**: Contém o código do cliente em Python, além de seus recursos e dependências.
 - **server/**: Contém o código do servidor em Node.js, além de suas dependências.
 
-## Configuração do Cliente
-
-1. Navegue para o diretório `client`.
-   ```bash
-	cd client
-   ```
 
 ```bash
 test-multiplayer-gpt/
