@@ -1,11 +1,10 @@
 import pygame
-import websocket
+import socketio
 import json
-import _thread
 import random
 
-# Configurações do cliente WebSocket
-server_url = "wss://os-pinheirinhos-multiplayer.up.railway.app"
+# Configurações do cliente Socket.IO
+server_url = "https://os-pinheirinhos-multiplayer.up.railway.app"
 room_id = input("Digite o nome da sala para entrar ou criar: ")
 
 # Configurações do pygame
@@ -15,7 +14,7 @@ win = pygame.display.set_mode((width, height))
 pygame.display.set_caption("Multiplayer Game")
 clock = pygame.time.Clock()
 
-# Define uma cor aleatória para o jogador
+# Define uma cor aleatória para o jogador (só precisa ser enviada uma vez)
 color = (random.randint(0, 255), random.randint(0, 255), random.randint(0, 255))
 x, y = 50, 50
 vel = 5
@@ -38,26 +37,46 @@ def redraw_window():
         pygame.draw.rect(win, player.color, (player.x, player.y, 20, 20))
     pygame.display.update()
 
-def on_message(ws, message):
+# Configura o cliente Socket.IO
+sio = socketio.Client()
+
+# Evento ao conectar ao servidor
+@sio.event
+def connect():
+    print(f"Conectado ao servidor Socket.IO. Entrando na sala '{room_id}'")
+    # Envia a mensagem de entrada na sala
+    sio.emit("joinRoom", {
+        "room": room_id,
+        "x": x,
+        "y": y,
+        "color": color  # Envia a cor apenas uma vez na entrada da sala
+    })
+
+# Evento ao receber o estado inicial da sala
+@sio.on("init")
+def on_init(data):
     global players
-    data = json.loads(message)
-    if "init" in data:
-        players = {pid: Player(pid, pdata['x'], pdata['y'], pdata['color']) for pid, pdata in data['init'].items()}
-    elif "stateUpdate" in data:
-        for pid, pdata in data["stateUpdate"].items():
-            if pid in players:
-                players[pid].update_position(pdata["x"], pdata["y"])
-                players[pid].color = pdata["color"]  # Atualiza a cor recebida
-            else:
-                players[pid] = Player(pid, pdata["x"], pdata["y"], pdata["color"])
+    players = {pid: Player(pid, pdata['x'], pdata['y'], tuple(pdata['color'])) for pid, pdata in data.items()}
+    print("Estado inicial recebido:", data)
 
-def on_open(ws):
-    print(f"Conectado ao servidor WebSocket. Entrando na sala '{room_id}'")
-    ws.send(json.dumps({"updatePosition": {"x": x, "y": y}}))
+# Evento ao receber uma atualização de estado da sala
+@sio.on("stateUpdate")
+def on_state_update(data):
+    for pid, pdata in data.items():
+        if pid in players:
+            players[pid].update_position(pdata["x"], pdata["y"])
+        else:
+            players[pid] = Player(pid, pdata["x"], pdata["y"], tuple(pdata["color"]))
 
-ws = websocket.WebSocketApp(server_url, on_message=on_message, on_open=on_open)
-_thread.start_new_thread(ws.run_forever, ())
+# Evento ao desconectar
+@sio.event
+def disconnect():
+    print("Desconectado do servidor")
 
+# Conecta ao servidor Socket.IO
+sio.connect(server_url)
+
+# Loop principal do Pygame
 run = True
 while run:
     clock.tick(60)  # Limita o loop para 60 FPS
@@ -74,13 +93,10 @@ while run:
         y += vel
 
     # Envia a posição atual para o servidor
-    data = {"updatePosition": {"x": x, "y": y}}  # Inclui a cor ao enviar
-    try:
-        ws.send(json.dumps(data))
-    except websocket.WebSocketConnectionClosedException:
-        print("Conexão fechada pelo servidor. Saindo do jogo...")
-        run = False
+    data = {"room": room_id, "x": x, "y": y}
+    sio.emit("updatePosition", data)
 
+    # Redesenha a janela
     redraw_window()
 
     # Verifica se o jogador quer sair
@@ -88,4 +104,6 @@ while run:
         if event.type == pygame.QUIT:
             run = False
 
+# Fecha o Pygame e desconecta o cliente Socket.IO
 pygame.quit()
+sio.disconnect()

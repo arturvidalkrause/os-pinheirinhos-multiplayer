@@ -1,6 +1,6 @@
 const express = require('express');
 const http = require('http');
-const WebSocket = require('ws');
+const { Server } = require('socket.io');
 
 class Player {
 	constructor(id, x = 50, y = 50, color = 'blue') {
@@ -24,6 +24,7 @@ class Room {
 
 	addPlayer(player) {
 		this.players[player.id] = player;
+		console.log(`Novo player conectado ${player.id}`);
 	}
 
 	removePlayer(playerId) {
@@ -46,52 +47,53 @@ class Room {
 	}
 }
 
-class Server {
-	constructor(wss) {
+class GameServer {
+	constructor(io) {
 		this.rooms = {}; // Salas de jogo
-		this.wss = wss;
+		this.io = io;
 
-		this.wss.on('connection', this.onConnection.bind(this));
-		console.log(`Servidor WebSocket rodando`);
+		this.io.on('connection', (socket) => this.onConnection(socket));
+		console.log('Servidor Socket.IO rodando');
 	}
 
-	onConnection(ws) {
-		let playerId = Date.now().toString(); // Gera um ID único para cada cliente
+	onConnection(socket) {
+		let playerId = socket.id; // Usa o ID do socket como ID do jogador
 		let roomId = null;
 
-		ws.on('message', (message) => {
-			const data = JSON.parse(message);
+		console.log(`Novo cliente conectado: ${playerId}`);
 
-			// Quando um cliente entra em uma sala
-			if (data.joinRoom) {
-				roomId = data.joinRoom;
-				ws.roomId = roomId; // Associa o roomId ao WebSocket do cliente
+		socket.on('joinRoom', (data) => {
+			roomId = data.room;
+			socket.join(roomId); // Adiciona o cliente à sala do Socket.IO
 
-				if (!this.rooms[roomId]) {
-					this.rooms[roomId] = new Room(roomId);
-					console.log(`Nova sala criada: ${roomId}`);
-				}
-
-				// Cria um novo jogador e o adiciona à sala
-				const player = new Player(playerId, data.x || 50, data.y || 50, data.color || 'blue');
-				this.rooms[roomId].addPlayer(player);
-
-				// Envia o estado inicial da sala para o novo cliente
-				ws.send(JSON.stringify({ init: this.rooms[roomId].getState() }));
-
-				// Notifica todos os jogadores na sala sobre o novo jogador
-				this.broadcastToRoom(roomId);
+			// Cria a sala se ainda não existir
+			if (!this.rooms[roomId]) {
+				this.rooms[roomId] = new Room(roomId);
+				console.log(`Nova sala criada: ${roomId}`);
 			}
 
-			// Atualiza a posição do jogador e retransmite o estado da sala
-			if (data.updatePosition && roomId) {
+			// Cria um novo jogador e o adiciona à sala
+			const player = new Player(playerId, data.x || 50, data.y || 50, data.color || 'blue');
+			this.rooms[roomId].addPlayer(player);
+
+			// Envia o estado inicial da sala para o novo cliente
+			socket.emit('init', this.rooms[roomId].getState());
+
+			// Notifica todos os jogadores na sala sobre o novo jogador
+			this.broadcastToRoom(roomId);
+		});
+
+		// Atualiza a posição do jogador e retransmite o estado da sala
+		socket.on('updatePosition', (data) => {
+			if (roomId && this.rooms[roomId]) {
 				const room = this.rooms[roomId];
-				room.updatePlayer(playerId, data.updatePosition.x, data.updatePosition.y);
+				room.updatePlayer(playerId, data.x, data.y);
 				this.broadcastToRoom(roomId); // Envia o estado atualizado da sala
 			}
 		});
 
-		ws.on('close', () => {
+		socket.on('disconnect', () => {
+			console.log(`Cliente desconectado: ${playerId}`);
 			if (roomId && this.rooms[roomId]) {
 				const room = this.rooms[roomId];
 				room.removePlayer(playerId);
@@ -112,22 +114,18 @@ class Server {
 
 		const state = room.getState(); // Estado atualizado da sala
 
-		// Envia o estado atualizado para todos os clientes na sala
-		this.wss.clients.forEach((client) => {
-			if (client.readyState === WebSocket.OPEN && client.roomId === roomId) {
-				client.send(JSON.stringify({ stateUpdate: state }));
-			}
-		});
+		// Emite o estado atualizado para todos os clientes na sala
+		this.io.to(roomId).emit('stateUpdate', state);
 	}
 }
 
 // Configuração do Express e do Servidor HTTP
 const app = express();
 const server = http.createServer(app);
-const wss = new WebSocket.Server({ server });
+const io = new Server(server); // Inicia o Socket.IO com o servidor HTTP
 
-// Inicializa o servidor WebSocket
-new Server(wss);
+// Inicializa o servidor Socket.IO
+new GameServer(io);
 
 // Inicia o servidor HTTP na porta definida
 const port = process.env.PORT || 3000;
