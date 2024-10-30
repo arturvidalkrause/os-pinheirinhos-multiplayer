@@ -129,6 +129,7 @@ new GameServer(io);
 
 // Inicia o servidor HTTP na porta definida
 const port = process.env.PORT || 3000;
+console.log(`Porta configurada pelo ambiente: ${process.env.PORT}`);
 server.listen(port, () => {
 	console.log(`Servidor rodando na porta ${port}`);
 });
